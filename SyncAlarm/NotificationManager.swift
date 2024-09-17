@@ -41,7 +41,14 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         let content = UNMutableNotificationContent()
         content.title = "Alarm"
         content.body = alarm.title
+        #if os(iOS)
         content.sound = UNNotificationSound(named: UNNotificationSoundName("alarm.wav"))
+        #endif
+        
+        #if os(watchOS)
+        content.sound = UNNotificationSound.defaultCritical
+        #endif
+        
         content.categoryIdentifier = "ALARM_CATEGORY"
         content.interruptionLevel = UNNotificationInterruptionLevel.timeSensitive
         
@@ -70,15 +77,7 @@ class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     
     func checkNotificationSettings() {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
-            print("Notification settings:")
-            print("Authorization Status: \(settings.authorizationStatus.rawValue)")
-            print("Alert Setting: \(settings.alertSetting.rawValue)")
-            print("Badge Setting: \(settings.badgeSetting.rawValue)")
-            print("Sound Setting: \(settings.soundSetting.rawValue)")
-            print("Notification Center Setting: \(settings.notificationCenterSetting.rawValue)")
-            print("Lock Screen Setting: \(settings.lockScreenSetting.rawValue)")
-            print("Critical Alert Setting: \(settings.criticalAlertSetting.rawValue)")
-            print("Alert Style: \(settings.alertStyle.rawValue)")
+            print("Notification settings: \(settings)")
         }
     }
     

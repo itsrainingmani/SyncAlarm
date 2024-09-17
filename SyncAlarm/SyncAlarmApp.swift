@@ -29,6 +29,8 @@ class AppDelegate: NSObject, UIApplicationDelegate {
             }
         }
         
+        ConnectivityManager.shared.activateSession()
+        
         do {
             try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, options: [.mixWithOthers])
             try AVAudioSession.sharedInstance().setActive(true)

@@ -73,8 +73,8 @@ struct AlarmListView: View {
         }
         .onAppear {
             checkNotificationPermission()
+            loadAlarms()
         }
-        .onAppear(perform: loadAlarms)
         .sheet(isPresented: $showingAddAlarm) {
             AddAlarmView(onSave: addAlarm)
         }
@@ -101,11 +101,13 @@ struct AlarmListView: View {
     private func addAlarm(_ alarm: Alarm) {
         AlarmManager.shared.addAlarm(alarm)
         loadAlarms()
+        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func updateAlarm(_ updatedAlarm: Alarm) {
         AlarmManager.shared.updateAlarm(updatedAlarm)
         loadAlarms()
+        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func toggleAlarm(_ alarm: Alarm) {
@@ -113,6 +115,7 @@ struct AlarmListView: View {
         updatedAlarm.isEnabled.toggle()
         AlarmManager.shared.updateAlarm(updatedAlarm)
         loadAlarms()
+        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func deleteAlarms(at offsets: IndexSet) {
@@ -120,6 +123,7 @@ struct AlarmListView: View {
             AlarmManager.shared.deleteAlarm(alarms[index])
         }
         loadAlarms()
+        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
 }
 
