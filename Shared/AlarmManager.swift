@@ -24,12 +24,14 @@ class AlarmManager {
               let alarms = try? JSONDecoder().decode([Alarm].self, from: encodedData) else {
             return []
         }
+        print("Current List of Alarms: \(alarms)")
         return alarms
     }
     
     func addAlarm(_ alarm: Alarm) {
         var alarms = loadAlarms()
         alarms.append(alarm)
+        print("New Alarm: \(alarm)")
         alarms = alarms.sorted { $0.time < $1.time }
         saveAlarms(alarms)
         
@@ -49,6 +51,7 @@ class AlarmManager {
     func updateAlarm(_ alarm: Alarm) {
         var alarms = loadAlarms()
         if let index = alarms.firstIndex(where: { $0.id == alarm.id }) {
+            print("Updating alarm: \(alarm)")
             let prevAlarmEnabled = alarms[index].isEnabled
             alarms[index] = alarm
             saveAlarms(alarms)
@@ -73,6 +76,7 @@ class AlarmManager {
     func deleteAlarm(_ alarm: Alarm) {
         var alarms = loadAlarms()
         alarms.removeAll { $0.id == alarm.id }
+        print("Removed alarm: \(alarm)")
         saveAlarms(alarms)
         NotificationManager.shared.cancelNotification(for: alarm)
     }

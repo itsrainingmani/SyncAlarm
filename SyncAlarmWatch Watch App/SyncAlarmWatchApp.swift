@@ -29,6 +29,6 @@ class AppDelegate: NSObject, WKApplicationDelegate {
             }
         }
         
-        WatchConnectivityManager.shared.activateSession()
+        ConnectivityManager.shared.activateSession()
     }
 }

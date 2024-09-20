@@ -37,14 +37,14 @@ struct AlarmListView: View {
                         Button {
                             editingAlarm = alarm
                         } label: {
-                            Text("Edit")
+                            Label("Edit", systemImage: "pencil")
                         }
                         .tint(.indigo)
                     }
                 }
                 .onDelete(perform: deleteAlarms)
             }
-            .navigationTitle("SyncAlarms")
+            .navigationTitle("Synchro")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
@@ -131,13 +131,27 @@ struct AlarmRow: View {
     let alarm: Alarm
     let onToggle: (Alarm) -> Void
     let filterType: Alarm.DeviceType?
+    private let timeInfo: String
+    private let ampm: String
+    
+    init(alarm: Alarm, onToggle: @escaping (Alarm) -> Void, filterType: Alarm.DeviceType?) {
+        self.alarm = alarm
+        self.onToggle = onToggle
+        self.filterType = filterType
+        let (timeString, periodString) = alarm.time.extractTimeComponents()
+        self.timeInfo = timeString
+        self.ampm = periodString
+    }
     
     var body: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text(alarm.time, style: .time)
-                    .font(.title.bold().monospaced())
-                    .fontWeight(.semibold)
+                HStack(alignment: .lastTextBaseline, spacing: 1) {
+                    Text(self.timeInfo)
+                        .font(.system(size: 40)).bold()
+                    Text(self.ampm)
+                        .font(.system(size: 22))
+                }.monospacedDigit()
                 Text(alarm.title)
                     .font(.title3)
                     .foregroundStyle(.secondary)
@@ -149,9 +163,9 @@ struct AlarmRow: View {
                         Image(systemName: "applewatch").foregroundStyle(filterType == .Watch ? .green : alarm.isEnabled ? .primary : .secondary)
                     }
                 }
-                .font(.subheadline)
+                .font(.title3)
             }.foregroundColor(alarm.isEnabled ? .primary : .secondary)
-            Spacer()
+            Spacer(minLength: 0.1)
             Toggle("", isOn: Binding(
                 get: { alarm.isEnabled },
                 set: { _ in onToggle(alarm) }

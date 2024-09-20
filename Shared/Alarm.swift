@@ -27,3 +27,18 @@ struct Alarm: Codable, Identifiable {
         self.deviceTypes = deviceTypes
     }
 }
+
+extension Date {
+    func extractTimeComponents() -> (timeString: String, periodString: String) {
+        let timeFormatter = DateFormatter()
+        timeFormatter.dateFormat = "h:mm"
+        
+        let periodFormatter = DateFormatter()
+        periodFormatter.dateFormat = "a"
+        
+        let timeString = timeFormatter.string(from: self)
+        let periodString = periodFormatter.string(from: self)
+        
+        return (timeString, periodString)
+    }
+}

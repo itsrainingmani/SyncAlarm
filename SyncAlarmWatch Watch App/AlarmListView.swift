@@ -46,7 +46,7 @@ struct AlarmListView: View {
     private func addAlarm(_ alarm: Alarm) {
         AlarmManager.shared.addAlarm(alarm)
         loadAlarms()
-        WatchConnectivityManager.shared.sendAlarmsToCounterpart()
+        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func toggleAlarm(_ alarm: Alarm) {
@@ -54,7 +54,7 @@ struct AlarmListView: View {
         updatedAlarm.isEnabled.toggle()
         AlarmManager.shared.updateAlarm(updatedAlarm)
         loadAlarms()
-        WatchConnectivityManager.shared.sendAlarmsToCounterpart()
+        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func deleteAlarms(at offsets: IndexSet) {
@@ -62,7 +62,7 @@ struct AlarmListView: View {
             AlarmManager.shared.deleteAlarm(filteredAlarms[index])
         }
         loadAlarms()
-        WatchConnectivityManager.shared.sendAlarmsToCounterpart()
+        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
 }
 
