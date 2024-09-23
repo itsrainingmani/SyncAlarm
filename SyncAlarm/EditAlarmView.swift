@@ -27,9 +27,8 @@ struct EditAlarmView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Label", text: $title)
-                DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute)
-                
+                DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute).datePickerStyle(WheelDatePickerStyle()).frame(maxHeight: 400)
+                TextField("Title", text: $title)
                 Section(header: Text("Devices")) {
                     ForEach(Alarm.DeviceType.allCases, id: \.self) { deviceType in
                         Toggle(deviceType.rawValue, isOn: Binding(

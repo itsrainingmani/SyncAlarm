@@ -3,9 +3,9 @@ import SwiftUI
 struct AlarmListView: View {
     @State private var alarms: [Alarm] = []
     @State private var showingAddAlarm = false
-    @State private var isNotificationPermissionGranted = false
     @State private var currentFilter: Alarm.DeviceType?
     @State private var editingAlarm: Alarm?
+    @State private var isNotificationPermissionGranted: Bool = false
 
     var filteredAlarms: [Alarm] {
         let filtered = currentFilter == nil ? alarms : alarms.filter { $0.deviceTypes.contains(currentFilter!) }
@@ -40,6 +40,9 @@ struct AlarmListView: View {
                             Label("Edit", systemImage: "pencil")
                         }
                         .tint(.indigo)
+                    }
+                    .onLongPressGesture {
+                        toggleAlarm(alarm)
                     }
                 }
                 .onDelete(perform: deleteAlarms)

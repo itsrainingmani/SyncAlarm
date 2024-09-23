@@ -9,26 +9,24 @@ import SwiftUI
 
 @main
 struct SyncAlarmWatch_Watch_AppApp: App {
-    @WKApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+    
+    init() {
+        NotificationManager.shared.requestAuthorization(completion: { granted in
+            if granted {
+                print("Notification permission granted")
+            } else {
+                print("Notification permission denied")
+            }
+        })
+        
+        ConnectivityManager.shared.activateSession()
+    }
+    
     var body: some Scene {
         WindowGroup {
             NavigationView {
                 AlarmListView()
             }
         }
-    }
-}
-
-class AppDelegate: NSObject, WKApplicationDelegate {
-    func applicationDidFinishLaunching() {
-        NotificationManager.shared.requestAuthorization { granted in
-            if granted {
-                print("Notification permission granted")
-            } else {
-                print("Notification permission denied")
-            }
-        }
-        
-        ConnectivityManager.shared.activateSession()
     }
 }
