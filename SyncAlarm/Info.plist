@@ -2,6 +2,14 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>UIAppFonts</key>
+	<array>
+		<string>InnovatorGrotesk-Regular.otf</string>
+		<string>InnovatorGrotesk-Bold.otf</string>
+		<string>HostGrotesk-Regular.ttf</string>
+		<string>HostGrotesk-Bold.ttf</string>
+		<string>HostGrotesk-Italic.ttf</string>
+	</array>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>Please allow notifications so we can show alarms!</string>
 	<key>UIBackgroundModes</key>

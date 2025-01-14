@@ -36,6 +36,7 @@ struct AddAlarmView: View {
                 }
             }
             .navigationTitle("Add Alarm")
+            .navigationBarTitleDisplayMode(.inline)
             .navigationBarItems(
                 leading: Button("Cancel") {
                     presentationMode.wrappedValue.dismiss()

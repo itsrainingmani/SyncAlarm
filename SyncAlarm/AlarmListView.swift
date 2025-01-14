@@ -5,11 +5,16 @@ struct AlarmListView: View {
     @State private var showingAddAlarm = false
     @State private var currentFilter: Alarm.DeviceType?
     @State private var editingAlarm: Alarm?
-    @State private var isNotificationPermissionGranted: Bool = false
+    @State private var isNotificationPermissionGranted: Bool = true
+    @State private var showingPermissionDialog = false
 
     var filteredAlarms: [Alarm] {
         let filtered = currentFilter == nil ? alarms : alarms.filter { $0.deviceTypes.contains(currentFilter!) }
         return filtered
+    }
+    
+    func refreshData() {
+        self.alarms = AlarmManager.shared.loadAlarms()
     }
     
     var body: some View {
@@ -18,13 +23,7 @@ struct AlarmListView: View {
                 GeometryReader { geometry in
                     ScrollView {
                         VStack(alignment: .center) {
-                            Text("No alarms present").font(.largeTitle).foregroundStyle(.secondary).italic()
-                            if !isNotificationPermissionGranted {
-                                Section {
-                                    Text("Please enable notifications in Settings to receive alarm alerts.")
-                                        .foregroundStyle(.red)
-                                }
-                            }
+                            Text("No alarms present").font(.custom("HostGrotesk-Bold", size: 30)).foregroundStyle(.secondary).bold()
                         }.frame(minWidth: 0, maxWidth: .infinity, minHeight: 0, idealHeight: geometry.size.height, maxHeight: .infinity)
                             .edgesIgnoringSafeArea(.all)
                     }
@@ -41,13 +40,27 @@ struct AlarmListView: View {
                         }
                         .tint(.indigo)
                     }
+                    .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            deleteAlarms(alarm)
+                        } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                        .tint(.red)
+                    }
                     .onLongPressGesture {
                         toggleAlarm(alarm)
                     }
+                    .listRowInsets(EdgeInsets())
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.visible)
+                    .listRowSeparatorTint(Color.secondary)
                 }
-                .onDelete(perform: deleteAlarms)
             }
-            .navigationTitle("Synchro")
+            .refreshable {
+                refreshData()
+            }
+            .navigationTitle("Sync Alarms")
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Menu {
@@ -78,6 +91,25 @@ struct AlarmListView: View {
             checkNotificationPermission()
             loadAlarms()
         }
+        .alert("Enable Notifications",
+               isPresented: Binding(
+                get: { !isNotificationPermissionGranted && showingPermissionDialog },
+                set: { showingPermissionDialog = $0 }
+               ),
+               actions: {
+                   Button("Open Settings") {
+                       if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                           UIApplication.shared.open(settingsURL)
+                       }
+                   }
+                   Button("Later", role: .cancel) {
+                       showingPermissionDialog = false
+                   }
+               },
+               message: {
+                   Text("To receive alarm alerts, you need to enable notifications in your settings.")
+               }
+        )
         .sheet(isPresented: $showingAddAlarm) {
             AddAlarmView(onSave: addAlarm)
         }
@@ -93,6 +125,7 @@ struct AlarmListView: View {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
                 isNotificationPermissionGranted = settings.authorizationStatus == .authorized
+                showingPermissionDialog = !isNotificationPermissionGranted
             }
         }
     }
@@ -121,10 +154,8 @@ struct AlarmListView: View {
         ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
-    private func deleteAlarms(at offsets: IndexSet) {
-        offsets.forEach { index in
-            AlarmManager.shared.deleteAlarm(alarms[index])
-        }
+    private func deleteAlarms(_ alarm: Alarm) {
+        AlarmManager.shared.deleteAlarm(alarm)
         loadAlarms()
         ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
@@ -148,15 +179,15 @@ struct AlarmRow: View {
     
     var body: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .lastTextBaseline, spacing: 1) {
                     Text(self.timeInfo)
-                        .font(.system(size: 40)).bold()
+                        .font(.custom("InnovatorGrotesk-Bold", size: alarm.isEnabled ? 55 : 40))
                     Text(self.ampm)
-                        .font(.system(size: 22))
-                }.monospacedDigit()
-                Text(alarm.title)
-                    .font(.title3)
+                        .font(.custom("InnovatorGrotesk-Regular", size: alarm.isEnabled ? 25 : 20))
+                }
+                Text(alarm.title.count > 0 ? alarm.title : "Alarm")
+                    .font(.custom("HostGrotesk-Regular", size: 20))
                     .foregroundStyle(.secondary)
                 HStack {
                     if alarm.deviceTypes.contains(.iPhone) {
@@ -173,7 +204,7 @@ struct AlarmRow: View {
                 get: { alarm.isEnabled },
                 set: { _ in onToggle(alarm) }
             ))
-        }
+        }.padding(.vertical, 8).padding(.trailing, 8)
     }
 }
 
