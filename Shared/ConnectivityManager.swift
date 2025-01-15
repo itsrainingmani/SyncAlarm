@@ -5,14 +5,6 @@
 //  Created by Manikandan Sundararajan on 9/20/24.
 //
 
-
-//
-//  ConnectivityManager.swift
-//  SyncAlarm
-//
-//  Created by Manikandan Sundararajan on 9/15/24.
-//
-
 import SwiftUI
 import Foundation
 import WatchConnectivity

@@ -16,18 +16,28 @@ struct AlarmListView: View {
     }
     
     var body: some View {
-        List {
-            ForEach(filteredAlarms) { alarm in
-                AlarmRow(alarm: alarm, toggleAlarm: toggleAlarm)
+        VStack {
+            List {
+                ForEach(filteredAlarms) { alarm in
+                    AlarmRow(alarm: alarm, toggleAlarm: toggleAlarm)
+                }
+                .onDelete(perform: deleteAlarms)
+                Button(action: { showingAddAlarm = true }) {
+                    ZStack {
+                        Circle()
+                            .fill(Color(UIColor.darkGray)) // You can change the color to whatever you prefer
+                            .frame(width: 50, height: 50) // Adjust the size of the circle
+                        Image(systemName: "plus")
+                            .foregroundColor(.white) // Change the color of the plus icon
+                            .font(.system(size: 22)) // Adjust the size of the plus icon
+                    }
+                    .frame(maxWidth: .infinity) // Center the button in the row
+                }
+                .listRowInsets(EdgeInsets()) // Remove default padding to center the button
+                .listRowBackground(Color.clear) // Make the row background transparent
             }
-            .onDelete(perform: deleteAlarms)
         }
-        .navigationTitle("Alarms")
-        .toolbar {
-            Button(action: { showingAddAlarm = true }) {
-                Image(systemName: "plus")
-            }
-        }
+        .navigationTitle("Sync Alarms")
         .onAppear {
             loadAlarms()
         }
@@ -72,7 +82,7 @@ struct AlarmRow: View {
     
     var body: some View {
         HStack {
-            Text(alarm.time, style: .time)
+            Text(alarm.time, style: .time).fontDesign(.monospaced)
             Toggle("", isOn: Binding(
                 get: { alarm.isEnabled },
                 set: { _ in toggleAlarm(alarm) }

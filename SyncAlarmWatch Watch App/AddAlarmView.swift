@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import WatchDatePicker
 
 struct AddAlarmView: View {
     @State private var time = Date()
@@ -16,12 +15,12 @@ struct AddAlarmView: View {
     
     var body: some View {
         VStack {
-            TimeInputView(selection: $time)
+            DatePicker("", selection: $time, displayedComponents: .hourAndMinute)
             Button("Save") {
                 let newAlarm = Alarm(title: "", time: time, deviceTypes: [.Watch])
                 onSave(newAlarm)
                 presentationMode.wrappedValue.dismiss()
-            }
+            }.tint(.orange).foregroundStyle(.white)
         }
     }
 }
