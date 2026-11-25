@@ -35,7 +35,13 @@ struct AlarmListView: View {
                 AlarmHealthView()
                 Section {
                     Text("Sync confirms saved settings on both devices. Alert destinations are separate.").font(.caption).foregroundStyle(.secondary)
-                    Button("Retry sync") { ConnectivityManager.shared.sendAlarmsToCounterpart() }
+                    Button("Retry sync and scheduling") {
+                        store.reconcile()
+                        ConnectivityManager.shared.sendAlarmsToCounterpart()
+                    }
+                    if NotificationManager.shared.usesSystemAlarms {
+                        Text("iPhone system alarms may also appear on a paired watch. The Watch destination adds an independent notification.").font(.caption).foregroundStyle(.secondary)
+                    }
                 }
                 ForEach(filteredAlarms) { alarm in
                     AlarmRow(alarm: alarm, onToggle: toggleAlarm, filterType: currentFilter)
@@ -114,12 +120,13 @@ struct AlarmListView: View {
             checkNotificationPermission()
             loadAlarms()
         }
-        .alert("Enable Notifications",
+        .alert(NotificationManager.shared.usesSystemAlarms ? "Enable Alarms" : "Enable Notifications",
                isPresented: Binding(
                 get: { !isNotificationPermissionGranted && showingPermissionDialog },
                 set: { showingPermissionDialog = $0 }
                ),
                actions: {
+                   Button("Allow alerts") { NotificationManager.shared.requestAuthorization { _ in } }
                    Button("Open Settings") {
                        if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
                            UIApplication.shared.open(settingsURL)
@@ -130,7 +137,7 @@ struct AlarmListView: View {
                    }
                },
                message: {
-                   Text("To receive alarm alerts, you need to enable notifications in your settings.")
+                   Text(NotificationManager.shared.usesSystemAlarms ? "Allow this app to schedule system alarms. Alarm permission is separate from notification permission." : "To receive alarm alerts, enable notifications and sounds in Settings.")
                }
         )
         .sheet(isPresented: $showingAddAlarm) {
@@ -145,14 +152,14 @@ struct AlarmListView: View {
     }
     
     private func checkNotificationPermission() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            DispatchQueue.main.async {
-                isNotificationPermissionGranted = settings.authorizationStatus == .authorized
-                showingPermissionDialog = !isNotificationPermissionGranted
-            }
+        Task {
+            let granted = await NotificationManager.shared.authorizationGranted()
+            isNotificationPermissionGranted = granted
+            showingPermissionDialog = !granted && alarms.contains { $0.isEnabled && $0.deviceTypes.contains(.iPhone) }
         }
     }
     
+
     private func loadAlarms() {
         alarms = AlarmManager.shared.loadAlarms()
     }

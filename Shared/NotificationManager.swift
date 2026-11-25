@@ -13,26 +13,77 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
     private var previous: [UUID: Alarm] = [:]
     private var invalidatedSnoozes: Set<UUID> = []
 
+    var usesSystemAlarms: Bool {
+        #if os(iOS)
+        if #available(iOS 26.0, *) { return true }
+        #endif
+        return false
+    }
+
     private override init() {
         super.init()
         center.delegate = self
         let snooze = UNNotificationAction(identifier: "SNOOZE_ACTION", title: "Snooze 9 minutes", options: [])
         let stop = UNNotificationAction(identifier: "STOP_ACTION", title: "Stop", options: [.destructive])
         center.setNotificationCategories([UNNotificationCategory(identifier: "ALARM_RINGING", actions: [snooze, stop], intentIdentifiers: [])])
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            Task { await AlarmKitScheduler.shared.observeAlarms { self.refreshSystemAlarmHealth() } }
+            Task { await AlarmKitScheduler.shared.observeAuthorization { AlarmManager.shared.reconcile() } }
+        }
+        #endif
     }
 
     func requestAuthorization(completion: @escaping (Bool) -> Void) {
         Task {
             do {
-                let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                let granted: Bool
+                #if os(iOS)
+                if #available(iOS 26.0, *) {
+                    granted = try await AlarmKitScheduler.shared.requestAuthorization()
+                } else {
+                    granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                }
+                #else
+                granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
+                #endif
                 completion(granted)
                 AlarmManager.shared.reconcile()
             } catch {
-                lastError = "Notification authorization failed: \(error.localizedDescription)"
+                lastError = "Alert authorization failed: \(error.localizedDescription)"
                 completion(false)
             }
         }
     }
+
+    func authorizationGranted() async -> Bool {
+        #if os(iOS)
+        if #available(iOS 26.0, *) { return AlarmKitScheduler.shared.isAuthorized }
+        #endif
+        return await center.notificationSettings().authorizationStatus == .authorized
+    }
+
+    #if os(iOS)
+    @available(iOS 26.0, *)
+    private func refreshSystemAlarmHealth() {
+        guard worker == nil, let repository = AlarmManager.shared.repository else { return }
+        do {
+            let client = AlarmKitScheduler.shared
+            let ids = try client.scheduledIDs()
+            statuses = Dictionary(uniqueKeysWithValues: repository.alarms.map { alarm in
+                let state: AlarmSchedulingState
+                if !alarm.isEnabled {
+                    state = ids.contains(alarm.id) ? .failed("System alarm cancellation needs a retry.") : .off
+                } else if !alarm.deviceTypes.contains(.iPhone) {
+                    state = ids.contains(alarm.id) ? .failed("System alarm cancellation needs a retry.") : .otherDevice
+                } else if !client.isAuthorized { state = .blocked }
+                else if ids.contains(alarm.id), client.configuration(for: alarm.id) == SystemAlarmDefinition(alarm) { state = .scheduled }
+                else { state = .failed("Current alarm settings are not scheduled. Retry to restore them.") }
+                return (alarm.id, state)
+            })
+        } catch { lastError = "Could not check system alarms: \(error.localizedDescription)" }
+    }
+    #endif
 
     func scheduleNotificationsForDevice(_ device: Alarm.DeviceType) {
         let alarms = AlarmManager.shared.loadAlarms()
@@ -48,6 +99,9 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
                 await reconcile(snapshot, device: target)
             }
             worker = nil
+            #if os(iOS)
+            if #available(iOS 26.0, *) { refreshSystemAlarmHealth() }
+            #endif
         }
     }
 
@@ -69,6 +123,25 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
     }
 
     private func reconcile(_ alarms: [Alarm], device: Alarm.DeviceType) async {
+        #if os(iOS)
+        if #available(iOS 26.0, *) {
+            let client = AlarmKitScheduler.shared
+            let result = await SystemAlarmReconciler(client: client).reconcile(alarms)
+            statuses = result.statuses
+            lastError = result.error
+            let requests = await center.pendingNotificationRequests()
+            let managed = requests.filter { $0.content.categoryIdentifier == "ALARM_RINGING" }
+            let eligible = Set(alarms.filter { $0.isEnabled && $0.deviceTypes.contains(.iPhone) }.map(\.id))
+            let obsolete = managed.compactMap { request -> String? in
+                guard let id = AlarmSchedulePlan.alarmID(from: request.identifier) else { return nil }
+                // Never run notification and AlarmKit backends together after migration.
+                return !eligible.contains(id) || result.migratedIDs.contains(id) || !client.isAuthorized ? request.identifier : nil
+            }
+            center.removePendingNotificationRequests(withIdentifiers: obsolete)
+            center.removeDeliveredNotifications(withIdentifiers: obsolete)
+            return
+        }
+        #endif
         let settings = await center.notificationSettings()
         let requests = await center.pendingNotificationRequests()
         let managed = requests.filter { $0.content.categoryIdentifier == "ALARM_RINGING" }
@@ -116,6 +189,7 @@ final class NotificationManager: NSObject, ObservableObject, UNUserNotificationC
                   let id = AlarmSchedulePlan.alarmID(from: response.notification.request.identifier) else { return }
             let deliveredID = response.notification.request.identifier
             center.removeDeliveredNotifications(withIdentifiers: [deliveredID])
+            if self.usesSystemAlarms { return } // Legacy delivered notifications must not create a parallel snooze.
             switch response.actionIdentifier {
             case "SNOOZE_ACTION":
                 guard let alarm = AlarmManager.shared.loadAlarms().first(where: { $0.id == id }), alarm.isEnabled else { return }

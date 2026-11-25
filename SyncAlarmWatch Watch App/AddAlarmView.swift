@@ -22,7 +22,7 @@ struct AddAlarmView: View {
             if isShared {
                 Toggle("Alert on iPhone", isOn: $alertOnPhone)
                 Toggle("Alert on Watch", isOn: $alertOnWatch)
-                Text("Settings sync when connected. Phone alerts require delivery to iPhone first.").font(.caption)
+                Text("Settings sync when connected. Phone alerts require delivery and permission on iPhone. iPhone system alarms may also appear on this watch.").font(.caption)
             } else {
                 Text("Only on this watch.").font(.caption)
             }
