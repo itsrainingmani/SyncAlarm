@@ -1,0 +1,46 @@
+name: SyncAlarm
+options:
+  bundleIdPrefix: com.syncalarm
+settings:
+  base:
+    SWIFT_VERSION: '5.0'
+    GENERATE_INFOPLIST_FILE: YES
+targets:
+  SyncAlarm:
+    type: application
+    platform: iOS
+    deploymentTarget: '17.0'
+    sources:
+      - path: Shared
+        excludes: [ConnectivityManager.swift]
+      - path: SyncAlarm
+        excludes: [Info.plist, SyncAlarm.entitlements]
+      - path: fonts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.syncalarm.app
+        INFOPLIST_FILE: SyncAlarm/Info.plist
+        TARGETED_DEVICE_FAMILY: '1,2'
+    dependencies:
+      - target: SyncAlarmWatch
+        embed: true
+  SyncAlarmWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: '10.0'
+    sources:
+      - path: Shared
+        excludes: [ConnectivityManager.swift]
+      - path: SyncAlarmWatch Watch App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.syncalarm.app.watchkitapp
+        INFOPLIST_KEY_WKApplication: YES
+        INFOPLIST_KEY_WKCompanionAppBundleIdentifier: com.syncalarm.app
+        TARGETED_DEVICE_FAMILY: '4'
+schemes:
+  SyncAlarm:
+    build:
+      targets:
+        SyncAlarm: all
+        SyncAlarmWatch: all
