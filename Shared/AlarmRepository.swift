@@ -136,3 +136,17 @@ struct AlarmEnvelope: Codable {
     var receipts: [AlarmReceipt]
     var requestsAcknowledgement: Bool
 }
+
+enum AlarmSyncState: Equatable {
+    case localOnly, pending, synced, unavailable
+}
+
+extension AlarmRepository {
+    func syncState(for alarm: Alarm) -> AlarmSyncState {
+        guard !alarm.isShared else {
+            guard let record = database.records.first(where: { $0.alarm.id == alarm.id && !$0.isDeleted }) else { return .unavailable }
+            return database.acknowledged[alarm.id] == record.revision ? .synced : .pending
+        }
+        return .localOnly
+    }
+}

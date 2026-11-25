@@ -29,8 +29,9 @@ struct EditAlarmView: View {
             Form {
                 DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute).datePickerStyle(WheelDatePickerStyle()).frame(maxHeight: 400)
                 TextField("Title", text: $title)
-                Section(header: Text("Devices")) {
-                    ForEach(Alarm.DeviceType.allCases, id: \.self) { deviceType in
+                Text(alarm.isShared ? "Shared alarm. Sync status confirms the companion saved its settings." : "Local alarm. Use Sync this alarm in the list to share it.").font(.caption)
+                Section(header: Text("Alert on")) {
+                    ForEach(alarm.isShared ? Alarm.DeviceType.allCases : [.iPhone], id: \.self) { deviceType in
                         Toggle(deviceType.rawValue, isOn: Binding(
                             get: { selectedDevices.contains(deviceType) },
                             set: { isSelected in
@@ -51,7 +52,7 @@ struct EditAlarmView: View {
                     presentationMode.wrappedValue.dismiss()
                 }.tint(.orange),
                 trailing: Button("Save") {
-                    let updatedAlarm = Alarm(id: alarm.id, title: title, time: time, isEnabled: alarm.isEnabled, deviceTypes: selectedDevices)
+                    let updatedAlarm = Alarm(id: alarm.id, title: title, time: time, isEnabled: alarm.isEnabled, deviceTypes: selectedDevices, isShared: alarm.isShared)
                     onSave(updatedAlarm)
                     presentationMode.wrappedValue.dismiss()
                 }

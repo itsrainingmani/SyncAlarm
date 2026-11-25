@@ -8,6 +8,7 @@
 import SwiftUI
 
 struct AddAlarmView: View {
+    @State private var isShared = true
     @State private var title = ""
     @State private var time = Date()
     @State private var selectedDevices: Set<Alarm.DeviceType> = [.iPhone]
@@ -20,8 +21,12 @@ struct AddAlarmView: View {
             Form {
                 DatePicker("Time", selection: $time, displayedComponents: .hourAndMinute).datePickerStyle(WheelDatePickerStyle()).frame(maxHeight: 400)
                 TextField("Title", text: $title)
-                Section(header: Text("Devices")) {
-                    ForEach(Alarm.DeviceType.allCases, id: \.self) { deviceType in
+                Section {
+                    Toggle("Sync with Apple Watch", isOn: $isShared)
+                    Text(isShared ? "Saved on both devices once acknowledged. Choose where it alerts below." : "Stays on this iPhone and is never sent to your watch.").font(.caption)
+                }
+                Section(header: Text("Alert on")) {
+                    ForEach(isShared ? Alarm.DeviceType.allCases : [.iPhone], id: \.self) { deviceType in
                         Toggle(deviceType.rawValue, isOn: Binding(
                             get: { selectedDevices.contains(deviceType) },
                             set: { isSelected in
@@ -42,11 +47,11 @@ struct AddAlarmView: View {
                     presentationMode.wrappedValue.dismiss()
                 }.tint(.orange),
                 trailing: Button("Save") {
-                    let newAlarm = Alarm(id: UUID(), title: title, time: time, isEnabled: true, deviceTypes: selectedDevices)
+                    let newAlarm = Alarm(id: UUID(), title: title, time: time, isEnabled: true, deviceTypes: isShared ? selectedDevices : [.iPhone], isShared: isShared)
                     onSave(newAlarm)
                     presentationMode.wrappedValue.dismiss()
                 }
-                .disabled(selectedDevices.isEmpty)
+                .disabled(isShared && selectedDevices.isEmpty)
             )
         }
     }
