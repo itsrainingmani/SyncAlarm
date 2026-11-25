@@ -22,3 +22,18 @@ xcodebuild -project SyncAlarm.xcodeproj -scheme SyncAlarm -destination 'generic/
 `Scripts/ci-workflow.yml.example` can be installed under `.github/workflows/` by
 an account with workflow-write permission. The current GitHub OAuth credential
 cannot publish workflow files.
+
+## Sync protocol
+
+Both apps must run the new protocol. Each alarm edit or deletion receives a Lamport
+revision (counter plus device ID). The atomic record store is also the durable
+outbox. Per-alarm merges reject stale revisions; deletion tombstones remain until a
+future explicitly designed compaction protocol. Concurrent edits to one alarm use
+a deterministic whole-alarm winner; edits to different alarms are preserved.
+
+WatchConnectivity always publishes a background application context and adds a
+live message/reply fast path when reachable. Background receipts use queued user
+info. Receipts acknowledge only persisted, matching revisions. Activation,
+reachability changes, foreground entry, and manual retry can resend safely.
+Local-only records are excluded from every envelope. Sync confirmation means the
+companion stored the current definition, not that alert scheduling succeeded.

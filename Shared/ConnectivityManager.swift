@@ -1,97 +1,100 @@
-//
-//  ConnectivityManager.swift
-//  SyncAlarm
-//
-//  Created by Manikandan Sundararajan on 9/20/24.
-//
-
-import SwiftUI
 import Foundation
+import Combine
 import WatchConnectivity
 
-class ConnectivityManager: NSObject, WCSessionDelegate {
+/// The persistent revisioned records are the outbox. Transport retries are safe.
+final class ConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     static let shared = ConnectivityManager()
-    @State static var companionState = false
+    @Published private(set) var lastError: String?
+    private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
-    private override init() {
-        super.init()
-    }
-    
     func activateSession() {
-        if WCSession.isSupported() {
-            WCSession.default.delegate = self
-            WCSession.default.activate()
-        }
+        session?.delegate = self
+        session?.activate()
     }
-    
-    func session(_ session: WCSession, activationDidCompleteWith activationState: WCSessionActivationState, error: (any Error)?) {
-        if let error = error {
-            print("WCSession activation failed with error: \(error.localizedDescription)")
-        } else {
-            print("WCSession activated with state: \(activationState.rawValue)")
-        }
-    }
-    
-    #if os(iOS)
-    func sessionDidBecomeInactive(_ session: WCSession) {
-        print("WCSession became inactive")
-    }
-
-    func sessionDidDeactivate(_ session: WCSession) {
-        print("WCSession Deactivated")
-        WCSession.default.activate()
-    }
-    #endif
 
     func sendAlarmsToCounterpart() {
-        let alarms = AlarmManager.shared.loadAlarms()
-        let alarmsData = try? JSONEncoder().encode(alarms)
-        
-        if WCSession.default.activationState == .activated && WCSession.default.isReachable {
-            WCSession.default.sendMessage(["alarms": alarmsData as Any], replyHandler: nil) { error in
-                print("Error sending alarms: \(error.localizedDescription)")
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let session, let repository = AlarmManager.shared.repository else { return }
+        guard session.activationState == .activated else {
+            activateSession() // activation completion flushes the durable records
+            return
+        }
+        let envelope = AlarmEnvelope(senderID: repository.database.deviceID, records: repository.sharedRecords, receipts: [], requestsAcknowledgement: true)
+        do {
+            let payload = ["alarmEnvelope": try JSONEncoder().encode(envelope)]
+            // Always retain the latest snapshot for eventual delivery, even if a live send fails.
+            try session.updateApplicationContext(payload)
+            if session.isReachable {
+                session.sendMessage(payload, replyHandler: { response in
+                    DispatchQueue.main.async { self.receive(response) }
+                }, errorHandler: { error in
+                    DispatchQueue.main.async { self.lastError = "Waiting for companion: \(error.localizedDescription)" }
+                })
             }
-        } else if WCSession.default.activationState == .activated && !WCSession.default.isReachable {
-            // Send the user info dictionary in the background instead
-            WCSession.default.transferUserInfo(["alarms": alarmsData as Any])
-        } else {
-            WCSession.default.activate()
+            lastError = nil
+        } catch { lastError = "Could not queue sync: \(error.localizedDescription)" }
+    }
+
+    /// Return a receipt only after a successful persistent merge.
+    @discardableResult
+    private func receive(_ payload: [String: Any]) -> [String: Any] {
+        dispatchPrecondition(condition: .onQueue(.main))
+        guard let repository = AlarmManager.shared.repository else { return [:] }
+        do {
+            guard let data = payload["alarmEnvelope"] as? Data else { return [:] }
+            let envelope = try JSONDecoder().decode(AlarmEnvelope.self, from: data)
+            guard envelope.protocolVersion == 1 else {
+                lastError = "Update both apps to use the same sync version."
+                return [:]
+            }
+            guard envelope.senderID != repository.database.deviceID else { return [:] }
+            try repository.merge(envelope.records, peerID: envelope.senderID)
+            try repository.acknowledge(envelope.receipts, peerID: envelope.senderID)
+            let receipts = repository.receipt(for: envelope.records)
+            AlarmManager.shared.reconcile()
+            NotificationCenter.default.post(name: .alarmsUpdated, object: nil)
+            lastError = nil
+            guard envelope.requestsAcknowledgement else { return [:] }
+            let acknowledgement = AlarmEnvelope(senderID: repository.database.deviceID, records: repository.sharedRecords, receipts: receipts, requestsAcknowledgement: false)
+            return ["alarmEnvelope": try JSONEncoder().encode(acknowledgement)]
+        } catch {
+            lastError = "Sync could not be saved: \(error.localizedDescription)"
+            return [:]
         }
     }
 
-    func session(_ session: WCSession, didReceiveMessage message: [String : Any]) {
-        if let alarmsData = message["alarms"] as? Data,
-           let receivedAlarms = try? JSONDecoder().decode([Alarm].self, from: alarmsData) {
-            DispatchQueue.main.async {
-                AlarmManager.shared.saveAlarms(receivedAlarms)
-                NotificationCenter.default.post(name: .alarmsUpdated, object: nil)
-                #if os(iOS)
-                NotificationManager.shared.scheduleNotificationsForDevice(.iPhone)
-                #endif
-                
-                #if os(watchOS)
-                NotificationManager.shared.scheduleNotificationsForDevice(.Watch)
-                #endif
-            }
+    func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+        DispatchQueue.main.async {
+            if let error { self.lastError = error.localizedDescription }
+            else if state == .activated { self.sendAlarmsToCounterpart() }
         }
     }
-    
-    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String : Any] = [:]) {
-        if let alarmsData = userInfo["alarms"] as? Data,
-           let receivedAlarms = try? JSONDecoder().decode([Alarm].self, from: alarmsData) {
-            DispatchQueue.main.async {
-                AlarmManager.shared.saveAlarms(receivedAlarms)
-                NotificationCenter.default.post(name: .alarmsUpdated, object: nil)
-                #if os(iOS)
-                NotificationManager.shared.scheduleNotificationsForDevice(.iPhone)
-                #endif
-                
-                #if os(watchOS)
-                NotificationManager.shared.scheduleNotificationsForDevice(.Watch)
-                #endif
-            }
+    func sessionReachabilityDidChange(_ session: WCSession) {
+        if session.isReachable { DispatchQueue.main.async { self.sendAlarmsToCounterpart() } }
+    }
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+        DispatchQueue.main.async { replyHandler(self.receive(message)) }
+    }
+    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        receiveInBackground(message, session: session)
+    }
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        receiveInBackground(applicationContext, session: session)
+    }
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        receiveInBackground(userInfo, session: session)
+    }
+    private func receiveInBackground(_ payload: [String: Any], session: WCSession) {
+        DispatchQueue.main.async {
+            let receipt = self.receive(payload)
+            if !receipt.isEmpty { session.transferUserInfo(receipt) }
         }
     }
+    #if os(iOS)
+    func sessionDidBecomeInactive(_ session: WCSession) {}
+    func sessionDidDeactivate(_ session: WCSession) { session.activate() }
+    #endif
 }
 
 extension Notification.Name {

@@ -137,13 +137,11 @@ struct AlarmListView: View {
     private func addAlarm(_ alarm: Alarm) {
         AlarmManager.shared.addAlarm(alarm)
         loadAlarms()
-        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func updateAlarm(_ updatedAlarm: Alarm) {
         AlarmManager.shared.updateAlarm(updatedAlarm)
         loadAlarms()
-        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func toggleAlarm(_ alarm: Alarm) {
@@ -151,13 +149,11 @@ struct AlarmListView: View {
         updatedAlarm.isEnabled.toggle()
         AlarmManager.shared.updateAlarm(updatedAlarm)
         loadAlarms()
-        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
     
     private func deleteAlarms(_ alarm: Alarm) {
         AlarmManager.shared.deleteAlarm(alarm)
         loadAlarms()
-        ConnectivityManager.shared.sendAlarmsToCounterpart()
     }
 }
 

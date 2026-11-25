@@ -18,6 +18,7 @@ struct AlarmRecord: Codable, Equatable {
 struct AlarmDatabase: Codable, Equatable {
     var schemaVersion = 1
     var deviceID: String = UUID().uuidString
+    var peerID: String?
     var counter: UInt64 = 0
     var records: [AlarmRecord] = []
     // Acknowledgements are local metadata, never merged as remote truth.
@@ -64,6 +65,55 @@ final class AlarmRepository {
         try commit(next)
     }
 
+    var sharedRecords: [AlarmRecord] { database.records.filter { $0.alarm.isShared } }
+    var pendingRecords: [AlarmRecord] {
+        sharedRecords.filter { database.acknowledged[$0.alarm.id] != $0.revision }
+    }
+
+    /// Merge a snapshot atomically. Missing records never imply deletion.
+    func merge(_ records: [AlarmRecord], peerID: String) throws {
+        var next = database
+        if next.peerID != peerID { next.acknowledged = [:]; next.peerID = peerID }
+        for record in records where record.alarm.isShared {
+            next.counter = max(next.counter, record.revision.counter)
+            if let index = next.records.firstIndex(where: { $0.alarm.id == record.alarm.id }) {
+                // A remote UUID must never overwrite a device-local alarm.
+                guard next.records[index].alarm.isShared else { continue }
+                if next.records[index].revision < record.revision {
+                    next.records[index] = record
+                    next.acknowledged.removeValue(forKey: record.alarm.id)
+                }
+            } else {
+                next.records.append(record)
+            }
+            if next.records.first(where: { $0.alarm.id == record.alarm.id }) == record {
+                // Receiving this exact revision is also evidence that the peer has it.
+                next.acknowledged[record.alarm.id] = record.revision
+            }
+        }
+        if next != database { try commit(next) }
+    }
+
+    func acknowledge(_ receipts: [AlarmReceipt], peerID: String) throws {
+        var next = database
+        if next.peerID != peerID { next.acknowledged = [:]; next.peerID = peerID }
+        for receipt in receipts {
+            if let record = next.records.first(where: { $0.alarm.id == receipt.id }),
+               record.alarm.isShared, record.revision == receipt.revision {
+                next.acknowledged[receipt.id] = receipt.revision
+            }
+        }
+        if next != database { try commit(next) }
+    }
+
+    func receipt(for records: [AlarmRecord]) -> [AlarmReceipt] {
+        records.compactMap { remote in
+            guard let local = database.records.first(where: { $0.alarm.id == remote.alarm.id }),
+                  local.alarm.isShared, local == remote else { return nil }
+            return AlarmReceipt(id: remote.alarm.id, revision: remote.revision)
+        }
+    }
+
     private func persist(_ value: AlarmDatabase) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try JSONEncoder().encode(value).write(to: url, options: .atomic)
@@ -72,4 +122,17 @@ final class AlarmRepository {
         try persist(value)
         database = value
     }
+}
+
+struct AlarmReceipt: Codable {
+    var id: UUID
+    var revision: AlarmRevision
+}
+
+struct AlarmEnvelope: Codable {
+    var protocolVersion = 1
+    var senderID: String
+    var records: [AlarmRecord]
+    var receipts: [AlarmReceipt]
+    var requestsAcknowledgement: Bool
 }

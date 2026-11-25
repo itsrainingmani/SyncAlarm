@@ -20,6 +20,7 @@ struct Alarm: Codable, Identifiable, Equatable {
             minute = Calendar.current.component(.minute, from: newValue)
         }
     }
+    var isShared: Bool
     var isEnabled: Bool
     var deviceTypes: Set<DeviceType>
     
@@ -28,7 +29,8 @@ struct Alarm: Codable, Identifiable, Equatable {
         case Watch
     }
     
-    init(id: UUID = UUID(), title: String, time: Date, isEnabled: Bool = true, deviceTypes: Set<DeviceType> = [.iPhone]) {
+    init(id: UUID = UUID(), title: String, time: Date, isEnabled: Bool = true, deviceTypes: Set<DeviceType> = [.iPhone], isShared: Bool = true) {
+        self.isShared = isShared
         self.id = id
         self.title = title
         self.hour = Calendar.current.component(.hour, from: time)
@@ -36,9 +38,10 @@ struct Alarm: Codable, Identifiable, Equatable {
         self.isEnabled = isEnabled
         self.deviceTypes = deviceTypes
     }
-    private enum CodingKeys: String, CodingKey { case id, title, time, hour, minute, isEnabled, deviceTypes }
+    private enum CodingKeys: String, CodingKey { case id, title, time, hour, minute, isEnabled, deviceTypes, isShared }
     init(from decoder: Decoder) throws {
         let values = try decoder.container(keyedBy: CodingKeys.self)
+        isShared = try values.decodeIfPresent(Bool.self, forKey: .isShared) ?? true
         id = try values.decode(UUID.self, forKey: .id)
         title = try values.decode(String.self, forKey: .title)
         isEnabled = try values.decode(Bool.self, forKey: .isEnabled)
@@ -57,6 +60,7 @@ struct Alarm: Codable, Identifiable, Equatable {
     }
     func encode(to encoder: Encoder) throws {
         var values = encoder.container(keyedBy: CodingKeys.self)
+        try values.encode(isShared, forKey: .isShared)
         try values.encode(id, forKey: .id)
         try values.encode(title, forKey: .title)
         try values.encode(hour, forKey: .hour)
