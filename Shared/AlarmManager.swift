@@ -17,15 +17,6 @@ final class AlarmManager: ObservableObject {
     }
 
     func loadAlarms() -> [Alarm] { repository?.alarms ?? [] }
-    func saveAlarms(_ alarms: [Alarm]) {
-        perform {
-            guard let repository else { return }
-            for alarm in alarms { try repository.upsert(alarm) }
-            for alarm in repository.alarms where !alarms.contains(where: { $0.id == alarm.id }) {
-                try repository.upsert(alarm, deleted: true)
-            }
-        }
-    }
     func addAlarm(_ alarm: Alarm) { mutate(alarm) }
     func updateAlarm(_ alarm: Alarm) { mutate(alarm) }
     func deleteAlarm(_ alarm: Alarm) { mutate(alarm, deleted: true) }
@@ -35,6 +26,7 @@ final class AlarmManager: ObservableObject {
             try repository?.upsert(alarm, deleted: deleted)
             if deleted { NotificationManager.shared.cancelNotification(for: alarm) }
             reconcile()
+            ConnectivityManager.shared.sendAlarmsToCounterpart()
         }
     }
     func reconcile() {

@@ -12,7 +12,6 @@ targets:
     deploymentTarget: '17.0'
     sources:
       - path: Shared
-        excludes: [ConnectivityManager.swift]
       - path: SyncAlarm
         excludes: [Info.plist, SyncAlarm.entitlements]
       - path: fonts
@@ -30,7 +29,6 @@ targets:
     deploymentTarget: '10.0'
     sources:
       - path: Shared
-        excludes: [ConnectivityManager.swift]
       - path: SyncAlarmWatch Watch App
     settings:
       base:
