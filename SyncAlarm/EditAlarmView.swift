@@ -31,6 +31,9 @@ struct EditAlarmView: View {
                 TextField("Title", text: $title)
                 Text(alarm.isShared ? "Shared alarm. Sync status confirms the companion saved its settings." : "Local alarm. Use Sync this alarm in the list to share it.").font(.caption)
                 Section(header: Text("Alert on")) {
+                    if NotificationManager.shared.usesSystemAlarms {
+                        Text("iPhone alarms may also appear on your paired watch. Watch adds an independent notification.").font(.caption)
+                    }
                     ForEach(alarm.isShared ? Alarm.DeviceType.allCases : [.iPhone], id: \.self) { deviceType in
                         Toggle(deviceType.rawValue, isOn: Binding(
                             get: { selectedDevices.contains(deviceType) },

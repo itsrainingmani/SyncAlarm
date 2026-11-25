@@ -13,6 +13,9 @@ for platform in iphoneos watchos; do
   fi
   sdk=$(xcrun --sdk "$platform" --show-sdk-path)
   # One shared connectivity implementation is selected per app.
-  sources=(Shared/AlarmScheduling.swift Shared/Alarm.swift Shared/AlarmRepository.swift Shared/AlarmManager.swift Shared/NotificationManager.swift Shared/ConnectivityManager.swift Shared/AlarmSyncStatusView.swift "$directory"/*.swift)
+  sources=(Shared/*.swift "$directory"/*.swift)
   xcrun swiftc -typecheck -swift-version 5 -module-cache-path "$CACHE/$platform" -sdk "$sdk" -target "$target" "${sources[@]}"
 done
+
+sdk=$(xcrun --sdk iphoneos --show-sdk-path)
+xcrun swiftc -typecheck -swift-version 5 -module-cache-path "$CACHE/iphoneos" -sdk "$sdk" -target arm64-apple-ios26.0 -application-extension Shared/AlarmKitPresentation.swift SyncAlarmWidgets/*.swift

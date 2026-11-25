@@ -2,6 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Schedule the iPhone alarms you create, including alarms received from your watch.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>NSUserNotificationUsageDescription</key>
 	<string>Please allow notifications so we can show alarms!</string>
 	<key>UIAppFonts</key>
@@ -11,6 +15,15 @@
 		<string>HostGrotesk-Regular.ttf</string>
 		<string>HostGrotesk-Bold.ttf</string>
 		<string>HostGrotesk-Italic.ttf</string>
+	</array>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>

@@ -11,17 +11,16 @@ The project is generated; source membership is declared in `project.yml`.
 
 ## Validation
 
-Run `Scripts/test.sh` for storage/sync tests and iOS/watchOS compiler checks.
+Run `Scripts/test.sh` for storage, sync, status, and scheduling tests plus
+iOS/watchOS app and AlarmKit Live Activity compiler checks. No GitHub CI is configured;
+validation is local before opening and merging each PR.
 For a full unsigned build on a Mac with the iOS and watchOS platforms installed:
 
 ```
 xcodegen generate
-xcodebuild -project SyncAlarm.xcodeproj -scheme SyncAlarm -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+xcodebuild -project SyncAlarm.xcodeproj -target SyncAlarm -configuration Debug CODE_SIGNING_ALLOWED=NO build
 ```
 
-`Scripts/ci-workflow.yml.example` can be installed under `.github/workflows/` by
-an account with workflow-write permission. The current GitHub OAuth credential
-cannot publish workflow files.
 
 ## Sync protocol
 
@@ -46,7 +45,7 @@ shared, delete it on both devices and create a new local alarm to stop sharing;
 editing an alarm preserves its scope. Existing alarms migrate as shared to
 preserve the original app behavior.
 
-Rows show **Only on this device**, **Waiting to sync**, or **Synced with companion**.
+Rows show **Settings only on this device**, **Waiting to sync**, or **Synced with companion**.
 The last state requires evidence that the companion stored the current revision;
 it does not assert current reachability or successful alert scheduling. Every
 edit resets confirmation. Both lists expose retry and errors. The watch lists all
@@ -54,20 +53,35 @@ shared definitions, including alarms that alert only on iPhone.
 
 ## Alert behavior and remaining device validation
 
-The current backend uses local notifications, with daily wall-clock schedules.
-It is not an AlarmKit wake-up alarm and cannot promise audible delivery through
-Silent mode or Focus. The watch uses ordinary notification sound; no critical-alert
-entitlement is assumed. Scheduling runs through one serial worker after local
-changes, remote merges, foreground entry, and authorization changes. Rows show
-local scheduling health separately from sync confirmation. Scheduling failure on
-the companion is not yet reported back as remote scheduling health.
+On iOS 26+, iPhone alarms use AlarmKit daily wall-clock schedules. Users must
+grant **alarm permission**, separate from notification permission, using Enable
+system alarms (or Settings if previously denied). Permission denial is shown as
+blocked; the app does not silently switch to local notifications. Older iOS
+versions and independent watch alerts continue using local notifications.
 
-Snooze schedules one separate nine-minute notification on the device where the
-action was tapped. Stop dismisses the current occurrence and cancels that device's
-snooze, keeping the daily alarm enabled. Neither action currently propagates to the
-other device. Changes, deletion, disabling, or removing a destination cancel its
-pending snooze. Requests outside the alarm category are preserved. WatchConnectivity
-background tasks wait for pending delivery and scheduling work to finish.
+AlarmKit can present an iPhone alarm on a paired watch, independently of the app's
+sync toggle and Watch destination. The Watch destination adds an independently
+scheduled watch notification; selecting both can produce two alerts. Local-only
+means the app does not sync the definition, not that the system cannot mirror an
+alert. A phone-targeted alarm created on the watch still needs to reach the phone
+and have AlarmKit authorization before it can be scheduled there.
+
+AlarmKit includes a nine-minute snooze countdown and a Live Activity extension
+for Lock Screen/Dynamic Island presentation, with a stop action. Unchanged system
+alarms are left in place, preserving active snoozes across foreground entry and
+repeated sync. Time/title edits cancel and recreate the same system ID; disabling, deleting,
+or removing the phone destination cancels it. OS alarm and authorization updates
+refresh local health separately from sync confirmation. Legacy phone notification
+requests are removed after replacement succeeds, or when alarm permission is
+not granted. A failed replacement remains visible and can be retried. A system-alarm edit
+can leave the new schedule unarmed if creation fails after cancellation; the UI
+reports this instead of claiming it is scheduled.
+
+On the local-notification backend, snooze creates a separate nine-minute request.
+Stop dismisses the occurrence and preserves daily recurrence. Watch notification
+actions do not stop or snooze the separate phone system alarm. Companion scheduling
+health is not yet sent back to the originating device. Paired system presentations
+and independent watch notifications must be validated on hardware.
 
 Before release, build and install both apps with your signing configuration, then
 validate on paired hardware with the debugger detached:
@@ -82,7 +96,8 @@ validate on paired hardware with the debugger detached:
 - Snooze and stop from delivered notifications with both apps suspended.
 - Check timezone changes, DST, reboot, locked phone, and watch out of range.
 
-AlarmKit migration remains pending Xcode 26+ / iOS 26 SDK validation. The current
-machine has Xcode 16.4 (iOS 18.5 / watchOS 11.5 SDKs); a full bundle build also reports
-that the iOS platform is not installed. Unit tests and both platform compiler
-checks pass, but do not substitute for the paired-device scenarios above.
+Implementation is compiled with Xcode 26.3 (17C529), iOS/watchOS 26.2 SDKs.
+The local device inventory currently has only iOS 17/18 simulator runtimes, so
+AlarmKit daemon authorization, ringing, snooze, and paired-watch presentation have
+not been exercised at runtime. Unit tests use an injected fake system-alarm client
+to cover scheduling, cancellation, failure recovery, and idempotence.

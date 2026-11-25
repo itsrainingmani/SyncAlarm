@@ -23,9 +23,12 @@ struct AddAlarmView: View {
                 TextField("Title", text: $title)
                 Section {
                     Toggle("Sync with Apple Watch", isOn: $isShared)
-                    Text(isShared ? "Saved on both devices once acknowledged. Choose where it alerts below." : "Stays on this iPhone and is never sent to your watch.").font(.caption)
+                    Text(isShared ? "Saved on both devices once acknowledged. Choose where it alerts below." : "Settings stay on this iPhone. The system may still present the alarm on a paired watch.").font(.caption)
                 }
                 Section(header: Text("Alert on")) {
+                    if NotificationManager.shared.usesSystemAlarms {
+                        Text("iPhone alarms may also appear on your paired watch. Watch adds an independent notification.").font(.caption)
+                    }
                     ForEach(isShared ? Alarm.DeviceType.allCases : [.iPhone], id: \.self) { deviceType in
                         Toggle(deviceType.rawValue, isOn: Binding(
                             get: { selectedDevices.contains(deviceType) },
