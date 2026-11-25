@@ -110,6 +110,7 @@ struct AlarmListView: View {
             }
         }
         .onAppear {
+            store.reconcile()
             checkNotificationPermission()
             loadAlarms()
         }
@@ -205,6 +206,7 @@ struct AlarmRow: View {
                         .font(.custom("InnovatorGrotesk-Regular", size: alarm.isEnabled ? 25 : 20))
                 }
                 AlarmSyncStatusView(alarm: alarm)
+                AlarmDeliveryStatusView(alarm: alarm)
                 Text(alarm.title.count > 0 ? alarm.title : "Alarm")
                     .font(.custom("HostGrotesk-Regular", size: 20))
                     .foregroundStyle(.secondary)

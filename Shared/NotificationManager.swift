@@ -1,150 +1,137 @@
-//
-//  NotificationManager.swift
-//  SyncAlarm
-//
-//  Created by Manikandan Sundararajan on 9/15/24.
-//
-
 import Foundation
+import Combine
 import UserNotifications
 
-class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
+@MainActor
+final class NotificationManager: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
-    
+    @Published private(set) var statuses: [UUID: AlarmSchedulingState] = [:]
+    @Published private(set) var lastError: String?
+    private let center = UNUserNotificationCenter.current()
+    private var pending: ([Alarm], Alarm.DeviceType)?
+    private var worker: Task<Void, Never>?
+    private var previous: [UUID: Alarm] = [:]
+    private var invalidatedSnoozes: Set<UUID> = []
+
     private override init() {
         super.init()
-        setupNotificationCategories()
-        UNUserNotificationCenter.current().delegate = self
+        center.delegate = self
+        let snooze = UNNotificationAction(identifier: "SNOOZE_ACTION", title: "Snooze 9 minutes", options: [])
+        let stop = UNNotificationAction(identifier: "STOP_ACTION", title: "Stop", options: [.destructive])
+        center.setNotificationCategories([UNNotificationCategory(identifier: "ALARM_RINGING", actions: [snooze, stop], intentIdentifiers: [])])
     }
-    
-    private func setupNotificationCategories() {
-        let snoozeAction = UNNotificationAction(identifier: "SNOOZE_ACTION", title: "Snooze", options: [])
-        let stopAction = UNNotificationAction(identifier: "STOP_ACTION", title: "Stop", options: [.destructive])
-        let category = UNNotificationCategory(identifier: "ALARM_RINGING",
-                                              actions: [snoozeAction, stopAction],
-                                              intentIdentifiers: [],
-                                              options: .customDismissAction)
-        
-        UNUserNotificationCenter.current().setNotificationCategories([category])
-    }
-    
+
     func requestAuthorization(completion: @escaping (Bool) -> Void) {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            DispatchQueue.main.async {
-                if let error = error {
-                    print("Error requesting notification permission: \(error.localizedDescription)")
-                }
+        Task {
+            do {
+                let granted = try await center.requestAuthorization(options: [.alert, .sound, .badge])
                 completion(granted)
+                AlarmManager.shared.reconcile()
+            } catch {
+                lastError = "Notification authorization failed: \(error.localizedDescription)"
+                completion(false)
             }
         }
     }
-    
-    func scheduleNotification(for alarm: Alarm) {
-        let (timeStr, periodStr) = alarm.time.extractTimeComponents()
+
+    func scheduleNotificationsForDevice(_ device: Alarm.DeviceType) {
+        let alarms = AlarmManager.shared.loadAlarms()
+        let next = Dictionary(uniqueKeysWithValues: alarms.map { ($0.id, $0) })
+        for (id, old) in previous where next[id] != old { invalidatedSnoozes.insert(id) }
+        previous = next
+        pending = (alarms, device)
+        // One worker drains the latest snapshots. Older async requests cannot finish last.
+        guard worker == nil else { return }
+        worker = Task {
+            while let (snapshot, target) = pending {
+                pending = nil
+                await reconcile(snapshot, device: target)
+            }
+            worker = nil
+        }
+    }
+
+    func waitUntilIdle() async { await worker?.value }
+
+    private func content(for alarm: Alarm) -> UNMutableNotificationContent {
         let content = UNMutableNotificationContent()
-        content.title = "Alarm for \(timeStr) \(periodStr)"
-        content.body = alarm.title
+        content.title = alarm.title.isEmpty ? "Alarm" : alarm.title
+        content.body = "Alarm for \(alarm.time.formatted(date: .omitted, time: .shortened))"
+        content.categoryIdentifier = "ALARM_RINGING"
+        content.userInfo = ["alarmID": alarm.id.uuidString]
         #if os(iOS)
         content.sound = UNNotificationSound(named: UNNotificationSoundName("alarm.wav"))
+        #else
+        content.sound = .default
         #endif
-        
-        #if os(watchOS)
-        content.sound = UNNotificationSound.defaultCritical
-        #endif
-        
-        content.categoryIdentifier = "ALARM_RINGING"
-        content.interruptionLevel = UNNotificationInterruptionLevel.timeSensitive
-        
-        let components = Calendar.current.dateComponents([.hour, .minute], from: alarm.time)
-        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-        
-        let request = UNNotificationRequest(identifier: alarm.id.uuidString, content: content, trigger: trigger)
-        
-        UNUserNotificationCenter.current().add(request) { error in
-            if let error = error {
-                print("Error scheduling notification: \(error.localizedDescription)")
-            } else {
-                print("Notification scheduled successfully for alarm: \(alarm.id.uuidString)")
+        content.interruptionLevel = .timeSensitive
+        return content
+    }
+
+    private func reconcile(_ alarms: [Alarm], device: Alarm.DeviceType) async {
+        let settings = await center.notificationSettings()
+        let requests = await center.pendingNotificationRequests()
+        let managed = requests.filter { $0.content.categoryIdentifier == "ALARM_RINGING" }
+        let plan = AlarmSchedulePlan(alarms: alarms, device: device, managedPendingIDs: managed.map(\.identifier), invalidatedSnoozes: invalidatedSnoozes)
+        invalidatedSnoozes = []
+        center.removePendingNotificationRequests(withIdentifiers: plan.cancelIDs)
+        center.removeDeliveredNotifications(withIdentifiers: plan.cancelIDs)
+        let canAlert = (settings.authorizationStatus == .authorized || settings.authorizationStatus == .provisional) && settings.soundSetting == .enabled
+        var next: [UUID: AlarmSchedulingState] = [:]
+        lastError = nil
+        for alarm in alarms {
+            if !alarm.isEnabled { next[alarm.id] = .off }
+            else if !alarm.deviceTypes.contains(device) { next[alarm.id] = .otherDevice }
+            else if !canAlert { next[alarm.id] = .blocked }
+        }
+        for alarm in plan.desired where canAlert {
+            let trigger = UNCalendarNotificationTrigger(dateMatching: DateComponents(hour: alarm.hour, minute: alarm.minute), repeats: true)
+            let request = UNNotificationRequest(identifier: AlarmSchedulePlan.regularID(alarm.id), content: content(for: alarm), trigger: trigger)
+            do {
+                // Adding the same ID updates time, title, sound, and actions without a cancel gap.
+                try await center.add(request)
+                next[alarm.id] = .scheduled
+            } catch {
+                next[alarm.id] = .failed(error.localizedDescription)
+                lastError = "An alarm could not be scheduled: \(error.localizedDescription)"
             }
         }
+        statuses = next
     }
-    
-    func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
-        if response.notification.request.content.categoryIdentifier == "ALARM_RINGING" {
+
+    func cancelNotification(for alarm: Alarm) {
+        let ids = [alarm.id.uuidString, AlarmSchedulePlan.regularID(alarm.id), AlarmSchedulePlan.snoozeID(alarm.id)]
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
+    }
+
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        Task { @MainActor in
+            defer { completionHandler() }
+            guard response.notification.request.content.categoryIdentifier == "ALARM_RINGING",
+                  let id = AlarmSchedulePlan.alarmID(from: response.notification.request.identifier) else { return }
+            let deliveredID = response.notification.request.identifier
+            center.removeDeliveredNotifications(withIdentifiers: [deliveredID])
             switch response.actionIdentifier {
             case "SNOOZE_ACTION":
-                print("Snoozing alarm \(response.notification.request.identifier)")
-                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [response.notification.request.identifier])
-                // We also need to set a new notification with a time set in the future for the same alarm
+                guard let alarm = AlarmManager.shared.loadAlarms().first(where: { $0.id == id }), alarm.isEnabled else { return }
+                #if os(iOS)
+                guard alarm.deviceTypes.contains(.iPhone) else { return }
+                #else
+                guard alarm.deviceTypes.contains(.Watch) else { return }
+                #endif
+                let request = UNNotificationRequest(identifier: AlarmSchedulePlan.snoozeID(id), content: self.content(for: alarm), trigger: UNTimeIntervalNotificationTrigger(timeInterval: 9 * 60, repeats: false))
+                do { try await center.add(request) }
+                catch { self.lastError = "Snooze failed: \(error.localizedDescription)" }
             case "STOP_ACTION":
-                print("Stopping alarm \(response.notification.request.identifier)")
-                UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [response.notification.request.identifier])
-            default:
-                break
+                // Dismiss this occurrence, leaving the daily recurrence enabled.
+                center.removePendingNotificationRequests(withIdentifiers: [AlarmSchedulePlan.snoozeID(id)])
+            default: break
             }
-        }
-        
-        // Always call the completion handler when done
-        completionHandler()
-    }
-    
-    func cancelNotification(for alarm: Alarm) {
-        UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: [alarm.id.uuidString])
-        print("Canceled Notification: \(alarm.id.uuidString)")
-    }
-    
-    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification, withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.badge, .sound])
-    }
-    
-    func checkNotificationSettings() {
-        UNUserNotificationCenter.current().getNotificationSettings { settings in
-            print("Notification settings: \(settings)")
-        }
-    }
-    
-    func scheduleNotificationsForDevice(_ deviceType: Alarm.DeviceType) {
-        // This is a hack. We shouldn't have to remove all pending notifications.
-        // Instead, can we simply check all our existing notifications and match them against the
-        // alarms that we have?
-        // UNUserNotificationCenter.current().removeAllPendingNotificationRequests()
-        
-        let alarms = AlarmManager.shared.loadAlarms()
-        UNUserNotificationCenter.current().getPendingNotificationRequests { requests in
-            let pendingAlarmIds = Set(requests.map { $0.identifier })
-            
-            for alarm in alarms {
-                if alarm.deviceTypes.contains(deviceType) && alarm.isEnabled {
-                    let alarmId = alarm.id.uuidString
-                    
-                    if !pendingAlarmIds.contains(alarmId) {
-                        // New alarm or updated time, schedule it
-                        self.scheduleNotification(for: alarm)
-                    } else {
-                        // Existing alarm, check if time has changed
-                        if let existingRequest = requests.first(where: { $0.identifier == alarmId }),
-                           let trigger = existingRequest.trigger as? UNCalendarNotificationTrigger,
-                           let triggerDate = trigger.nextTriggerDate() {
-                            let alarmComponents = Calendar.current.dateComponents([.hour, .minute], from: alarm.time)
-                            let triggerComponents = Calendar.current.dateComponents([.hour, .minute], from: triggerDate)
-                            
-                            if alarmComponents != triggerComponents {
-                                // Time has changed, reschedule
-                                self.cancelNotification(for: alarm)
-                                self.scheduleNotification(for: alarm)
-                            }
-                        }
-                    }
-                } else {
-                    // Alarm is disabled or not for this device, cancel if exists
-                    self.cancelNotification(for: alarm)
-                }
-            }
-            
-            // Cancel notifications for deleted alarms
-            let currentAlarmIds = Set(alarms.map { $0.id.uuidString })
-            let deletedAlarmIds = pendingAlarmIds.subtracting(currentAlarmIds)
-            UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: Array(deletedAlarmIds))
         }
     }
 }

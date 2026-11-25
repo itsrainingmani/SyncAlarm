@@ -30,10 +30,29 @@ struct AlarmSyncStatusView: View {
 
 struct AlarmHealthView: View {
     @ObservedObject private var store = AlarmManager.shared
+    @ObservedObject private var notifications = NotificationManager.shared
     @ObservedObject private var connection = ConnectivityManager.shared
     var body: some View {
-        if let error = store.errorMessage ?? connection.lastError {
+        if let error = store.errorMessage ?? connection.lastError ?? notifications.lastError {
             Text(error).font(.caption).foregroundStyle(.red)
         }
+    }
+}
+
+struct AlarmDeliveryStatusView: View {
+    let alarm: Alarm
+    @ObservedObject private var notifications = NotificationManager.shared
+    private var label: String {
+        switch notifications.statuses[alarm.id] {
+        case .scheduled: return "Alert scheduled here"
+        case .off: return "Alarm off"
+        case .otherDevice: return "Alerts on companion only"
+        case .blocked: return "Alert blocked: check notification and sound settings"
+        case .failed: return "Alert scheduling failed"
+        case nil: return "Checking local alert…"
+        }
+    }
+    var body: some View {
+        Text(label).font(.caption2).foregroundStyle(.secondary)
     }
 }

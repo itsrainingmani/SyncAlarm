@@ -2,6 +2,7 @@ import Foundation
 import Combine
 
 /// All UI mutations and connectivity callbacks enter on the main queue.
+@MainActor
 final class AlarmManager: ObservableObject {
     static let shared = AlarmManager()
     @Published private(set) var errorMessage: String?
@@ -30,6 +31,7 @@ final class AlarmManager: ObservableObject {
         }
     }
     func reconcile() {
+        guard repository != nil else { return } // Preserve existing alerts if storage cannot be opened.
         #if os(iOS)
         NotificationManager.shared.scheduleNotificationsForDevice(.iPhone)
         #elseif os(watchOS)

@@ -60,6 +60,7 @@ struct AlarmListView: View {
             }
         }
         .onAppear {
+            store.reconcile()
             loadAlarms()
         }
         .sheet(isPresented: $showingAddAlarm) {
@@ -103,6 +104,7 @@ struct AlarmRow: View {
             VStack(alignment: .leading) {
                 Text(alarm.time, style: .time).fontDesign(.monospaced)
                 AlarmSyncStatusView(alarm: alarm)
+                AlarmDeliveryStatusView(alarm: alarm)
                 Text("Alerts: " + alarm.deviceTypes.map(\.rawValue).sorted().joined(separator: ", ")).font(.caption2)
             }
             Toggle("", isOn: Binding(
