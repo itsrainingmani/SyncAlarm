@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct AlarmListView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var store = AlarmManager.shared
     @State private var alarms: [Alarm] = []
     @State private var showingAddAlarm = false
     @State private var currentFilter: Alarm.DeviceType?
@@ -30,9 +32,21 @@ struct AlarmListView: View {
                 }
             }
             List {
+                AlarmHealthView()
+                Section {
+                    Text("Sync confirms saved settings on both devices. Alert destinations are separate.").font(.caption).foregroundStyle(.secondary)
+                    Button("Retry sync") { ConnectivityManager.shared.sendAlarmsToCounterpart() }
+                }
                 ForEach(filteredAlarms) { alarm in
                     AlarmRow(alarm: alarm, onToggle: toggleAlarm, filterType: currentFilter)
                     .swipeActions(edge: .leading) {
+                        if !alarm.isShared {
+                            Button("Sync this alarm") {
+                                var shared = alarm
+                                shared.isShared = true
+                                updateAlarm(shared)
+                            }.tint(.green)
+                        }
                         Button {
                             editingAlarm = alarm
                         } label: {
@@ -58,6 +72,7 @@ struct AlarmListView: View {
                 }
             }
             .refreshable {
+                ConnectivityManager.shared.sendAlarmsToCounterpart()
                 refreshData()
             }
             .navigationTitle("Sync Alarms")
@@ -85,6 +100,13 @@ struct AlarmListView: View {
                         Image(systemName: "plus")
                     }
                 }
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                checkNotificationPermission()
+                store.reconcile()
+                ConnectivityManager.shared.sendAlarmsToCounterpart()
             }
         }
         .onAppear {
@@ -182,6 +204,7 @@ struct AlarmRow: View {
                     Text(self.ampm)
                         .font(.custom("InnovatorGrotesk-Regular", size: alarm.isEnabled ? 25 : 20))
                 }
+                AlarmSyncStatusView(alarm: alarm)
                 Text(alarm.title.count > 0 ? alarm.title : "Alarm")
                     .font(.custom("HostGrotesk-Regular", size: 20))
                     .foregroundStyle(.secondary)

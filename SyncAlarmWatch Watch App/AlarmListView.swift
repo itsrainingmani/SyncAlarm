@@ -8,18 +8,33 @@
 import SwiftUI
 
 struct AlarmListView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @ObservedObject private var store = AlarmManager.shared
     @State private var alarms: [Alarm] = []
     @State private var showingAddAlarm = false
     
     var filteredAlarms: [Alarm] {
-        return alarms.filter { $0.deviceTypes.contains(.Watch) }
+        return alarms
     }
     
     var body: some View {
         VStack {
             List {
+                AlarmHealthView()
+                Button("Retry sync") { ConnectivityManager.shared.sendAlarmsToCounterpart() }
+                Text("Sync confirms settings saved, not alert delivery.").font(.caption).foregroundStyle(.secondary)
                 ForEach(filteredAlarms) { alarm in
                     AlarmRow(alarm: alarm, toggleAlarm: toggleAlarm)
+                        .swipeActions(edge: .leading) {
+                            if !alarm.isShared {
+                                Button("Sync") {
+                                    var shared = alarm
+                                    shared.isShared = true
+                                    store.updateAlarm(shared)
+                                    loadAlarms()
+                                }.tint(.green)
+                            }
+                        }
                 }
                 .onDelete(perform: deleteAlarms)
                 Button(action: { showingAddAlarm = true }) {
@@ -38,6 +53,12 @@ struct AlarmListView: View {
             }
         }
         .navigationTitle("Sync Alarms")
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active {
+                store.reconcile()
+                ConnectivityManager.shared.sendAlarmsToCounterpart()
+            }
+        }
         .onAppear {
             loadAlarms()
         }
@@ -79,7 +100,11 @@ struct AlarmRow: View {
     
     var body: some View {
         HStack {
-            Text(alarm.time, style: .time).fontDesign(.monospaced)
+            VStack(alignment: .leading) {
+                Text(alarm.time, style: .time).fontDesign(.monospaced)
+                AlarmSyncStatusView(alarm: alarm)
+                Text("Alerts: " + alarm.deviceTypes.map(\.rawValue).sorted().joined(separator: ", ")).font(.caption2)
+            }
             Toggle("", isOn: Binding(
                 get: { alarm.isEnabled },
                 set: { _ in toggleAlarm(alarm) }

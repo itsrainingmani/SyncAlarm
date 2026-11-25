@@ -37,3 +37,17 @@ info. Receipts acknowledge only persisted, matching revisions. Activation,
 reachability changes, foreground entry, and manual retry can resend safely.
 Local-only records are excluded from every envelope. Sync confirmation means the
 companion stored the current definition, not that alert scheduling succeeded.
+
+## Local versus synced alarms
+
+The creation form has a sync toggle independent of alert destinations. Local
+alarms stay on the creating device; a swipe action can share one later. Once
+shared, delete it on both devices and create a new local alarm to stop sharing;
+editing an alarm preserves its scope. Existing alarms migrate as shared to
+preserve the original app behavior.
+
+Rows show **Only on this device**, **Waiting to sync**, or **Synced with companion**.
+The last state requires evidence that the companion stored the current revision;
+it does not assert current reachability or successful alert scheduling. Every
+edit resets confirmation. Both lists expose retry and errors. The watch lists all
+shared definitions, including alarms that alert only on iPhone.

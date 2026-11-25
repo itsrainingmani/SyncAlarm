@@ -52,6 +52,7 @@ final class ConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
             try repository.merge(envelope.records, peerID: envelope.senderID)
             try repository.acknowledge(envelope.receipts, peerID: envelope.senderID)
             let receipts = repository.receipt(for: envelope.records)
+            AlarmManager.shared.objectWillChange.send()
             AlarmManager.shared.reconcile()
             NotificationCenter.default.post(name: .alarmsUpdated, object: nil)
             lastError = nil
