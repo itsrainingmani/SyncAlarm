@@ -3,14 +3,44 @@ import Combine
 import WatchConnectivity
 
 /// The persistent revisioned records are the outbox. Transport retries are safe.
+@MainActor
 final class ConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
     static let shared = ConnectivityManager()
     @Published private(set) var lastError: String?
+    private var activationObservation: NSKeyValueObservation?
+    private var pendingObservation: NSKeyValueObservation?
+    private var backgroundWaiters: [CheckedContinuation<Void, Never>] = []
     private var session: WCSession? { WCSession.isSupported() ? WCSession.default : nil }
 
     func activateSession() {
-        session?.delegate = self
-        session?.activate()
+        guard let session else { return }
+        session.delegate = self
+        if activationObservation == nil {
+            activationObservation = session.observe(\.activationState) { _, _ in
+                DispatchQueue.main.async { self.completeBackgroundDeliveryIfReady() }
+            }
+            pendingObservation = session.observe(\.hasContentPending) { _, _ in
+                DispatchQueue.main.async { self.completeBackgroundDeliveryIfReady() }
+            }
+        }
+        session.activate()
+    }
+
+    /// SwiftUI owns completion of the watch background task after this returns.
+    func finishBackgroundDelivery() async {
+        guard session != nil else { return }
+        if session?.activationState != .activated { activateSession() }
+        await withCheckedContinuation { continuation in
+            backgroundWaiters.append(continuation)
+            DispatchQueue.main.async { self.completeBackgroundDeliveryIfReady() }
+        }
+        await NotificationManager.shared.waitUntilIdle()
+    }
+    private func completeBackgroundDeliveryIfReady(force: Bool = false) {
+        guard force || (session?.activationState == .activated && session?.hasContentPending == false) else { return }
+        let waiters = backgroundWaiters
+        backgroundWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 
     func sendAlarmsToCounterpart() {
@@ -65,36 +95,39 @@ final class ConnectivityManager: NSObject, ObservableObject, WCSessionDelegate {
         }
     }
 
-    func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
+    nonisolated func session(_ session: WCSession, activationDidCompleteWith state: WCSessionActivationState, error: Error?) {
         DispatchQueue.main.async {
-            if let error { self.lastError = error.localizedDescription }
+            if let error {
+                self.lastError = error.localizedDescription
+                self.completeBackgroundDeliveryIfReady(force: true)
+            }
             else if state == .activated { self.sendAlarmsToCounterpart() }
         }
     }
-    func sessionReachabilityDidChange(_ session: WCSession) {
+    nonisolated func sessionReachabilityDidChange(_ session: WCSession) {
         if session.isReachable { DispatchQueue.main.async { self.sendAlarmsToCounterpart() } }
     }
-    func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any], replyHandler: @escaping ([String: Any]) -> Void) {
         DispatchQueue.main.async { replyHandler(self.receive(message)) }
     }
-    func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        receiveInBackground(message, session: session)
+    nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
+        receiveInBackground(message)
     }
-    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
-        receiveInBackground(applicationContext, session: session)
+    nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        receiveInBackground(applicationContext)
     }
-    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
-        receiveInBackground(userInfo, session: session)
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        receiveInBackground(userInfo)
     }
-    private func receiveInBackground(_ payload: [String: Any], session: WCSession) {
+    nonisolated private func receiveInBackground(_ payload: [String: Any]) {
         DispatchQueue.main.async {
             let receipt = self.receive(payload)
-            if !receipt.isEmpty { session.transferUserInfo(receipt) }
+            if !receipt.isEmpty { self.session?.transferUserInfo(receipt) }
         }
     }
     #if os(iOS)
-    func sessionDidBecomeInactive(_ session: WCSession) {}
-    func sessionDidDeactivate(_ session: WCSession) { session.activate() }
+    nonisolated func sessionDidBecomeInactive(_ session: WCSession) {}
+    nonisolated func sessionDidDeactivate(_ session: WCSession) { session.activate() }
     #endif
 }
 

@@ -51,3 +51,38 @@ The last state requires evidence that the companion stored the current revision;
 it does not assert current reachability or successful alert scheduling. Every
 edit resets confirmation. Both lists expose retry and errors. The watch lists all
 shared definitions, including alarms that alert only on iPhone.
+
+## Alert behavior and remaining device validation
+
+The current backend uses local notifications, with daily wall-clock schedules.
+It is not an AlarmKit wake-up alarm and cannot promise audible delivery through
+Silent mode or Focus. The watch uses ordinary notification sound; no critical-alert
+entitlement is assumed. Scheduling runs through one serial worker after local
+changes, remote merges, foreground entry, and authorization changes. Rows show
+local scheduling health separately from sync confirmation. Scheduling failure on
+the companion is not yet reported back as remote scheduling health.
+
+Snooze schedules one separate nine-minute notification on the device where the
+action was tapped. Stop dismisses the current occurrence and cancels that device's
+snooze, keeping the daily alarm enabled. Neither action currently propagates to the
+other device. Changes, deletion, disabling, or removing a destination cancel its
+pending snooze. Requests outside the alarm category are preserved. WatchConnectivity
+background tasks wait for pending delivery and scheduling work to finish.
+
+Before release, build and install both apps with your signing configuration, then
+validate on paired hardware with the debugger detached:
+
+- Create local alarms on each device; verify they never appear on the companion.
+- Create shared alarms targeting phone, watch, and both; verify pending then synced.
+- Edit both devices offline, reconnect, and verify deterministic convergence.
+- Delete an alarm before delivering an older snapshot; verify it stays deleted.
+- Relaunch during sync; verify pending changes resume and confirmations persist.
+- Remove a destination, disable, and delete; verify no old regular/snooze alert fires.
+- Deny notification/sound permissions; verify synced and blocked are distinct.
+- Snooze and stop from delivered notifications with both apps suspended.
+- Check timezone changes, DST, reboot, locked phone, and watch out of range.
+
+AlarmKit migration remains pending Xcode 26+ / iOS 26 SDK validation. The current
+machine has Xcode 16.4 (iOS 18.5 / watchOS 11.5 SDKs); a full bundle build also reports
+that the iOS platform is not installed. Unit tests and both platform compiler
+checks pass, but do not substitute for the paired-device scenarios above.

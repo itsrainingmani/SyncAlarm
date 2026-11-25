@@ -28,5 +28,8 @@ struct SyncAlarmWatch_Watch_AppApp: App {
                 AlarmListView()
             }
         }
+        .backgroundTask(.watchConnectivity) {
+            await ConnectivityManager.shared.finishBackgroundDelivery()
+        }
     }
 }
